@@ -1,48 +1,43 @@
+// main.go
 package main
 
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
-	"os"
-	"gorm.io/gorm"
-	"gorm.io/driver/mysql"
 
-	"GoAPI/controllers" // Importing controllers from the same directory
-	"GoAPI/models"      // Importing models from the same directory
+	"github.com/gorilla/csrf"
+	"github.com/joho/godotenv"
+	// "golang.org/x/time/rate"
 )
 
-var db *gorm.DB
-
-func getDB() *gorm.DB {
-	return db
+type Message struct {
+	Message string `json:"message"`
 }
 
 func helloWorld(w http.ResponseWriter, r *http.Request) {
-	msg := Message{"Hello World"} // Assuming Message struct is defined
+	msg := Message{"Hello World"}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(msg)
 }
 
 func main() {
-	user := os.Getenv("user")
-	password := os.Getenv("password")
-	ip := os.Getenv("ip")
-	port := os.Getenv("port")
-	dbName := os.Getenv("db")
-	dsn := user + ":" + password + "@tcp(" + ip + ":" + port + ")/" + dbName
-	var err error
-	db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	// Load environment variables from the .env file
+	err := godotenv.Load()
 	if err != nil {
-		panic(err.Error())
+		log.Fatalf("Error loading .env file")
 	}
-	err = db.AutoMigrate(&models.User{}, &models.ExercisesPlan{}, &models.Exercise{}, &models.RoutineExercise{})
-	if err != nil {
-		panic(err.Error())
-	}
+
+	db = Connect() // Ensure db is initialized here
 	fmt.Println("Connected to the database")
 	fmt.Println("Server started on: http://localhost:8080")
-	http.HandleFunc("/", helloWorld)
-	http.HandleFunc("/login", controllers.Login)
-	http.ListenAndServe(":8080", nil)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", helloWorld)
+	mux.HandleFunc("/login", Login)
+	mux.HandleFunc("/create-user", CreateUserController)
+
+	csrfMiddleware := csrf.Protect([]byte("32-byte-long-auth-key"))
+	http.ListenAndServe(":8080", rateLimit(csrfMiddleware(mux)))
 }
